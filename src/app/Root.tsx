@@ -1,8 +1,8 @@
 import { Composition } from "remotion";
 import { TitleCard, titleCardSchema } from "../pages/title-card/TitleCard";
 import { Logo, logoSchema } from "../entities/logo/Logo";
-import { BearCleaning } from "../pages/bear-cleaning/BearCleaning";
-import { TOTAL_DURATION } from "../pages/bear-cleaning/constants";
+import { BearKitchen } from "../pages/bear-kitchen/BearKitchen";
+import { TIMING } from "../pages/bear-kitchen/constants";
 
 // Each <Composition> is an entry in the sidebar!
 
@@ -45,9 +45,9 @@ export const RemotionRoot: React.FC = () => {
       />
 
       <Composition
-        id="BearCleaning"
-        component={BearCleaning}
-        durationInFrames={TOTAL_DURATION}
+        id="BearKitchen"
+        component={BearKitchen}
+        durationInFrames={TIMING.totalDuration}
         fps={30}
         width={1920}
         height={1080}

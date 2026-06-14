@@ -7,9 +7,11 @@ type BearProps = {
   rightArmStyle?: React.CSSProperties;
   /** Animates the left paw, e.g. for flailing or bracing. */
   leftArmStyle?: React.CSSProperties;
+  /** 0 = closed smile, 1 = fully open (mid-speech). */
+  mouthOpen?: number;
 };
 
-const Ear: React.FC<{ side: "left" | "right" }> = ({ side }) => (
+export const Ear: React.FC<{ side: "left" | "right" }> = ({ side }) => (
   <div
     style={{
       position: "absolute",
@@ -76,7 +78,7 @@ const Eye: React.FC<{ side: "left" | "right" }> = ({ side }) => (
   </div>
 );
 
-const Foot: React.FC<{ side: "left" | "right" }> = ({ side }) => (
+export const Foot: React.FC<{ side: "left" | "right" }> = ({ side }) => (
   <div
     style={{
       position: "absolute",
@@ -89,6 +91,53 @@ const Foot: React.FC<{ side: "left" | "right" }> = ({ side }) => (
       transform: `rotate(${side === "left" ? -8 : 8}deg)`,
     }}
   />
+);
+
+const Mouth: React.FC<{ openAmount: number }> = ({ openAmount }) => (
+  <>
+    {/* Closed-mouth smile outline */}
+    <div
+      style={{
+        position: "absolute",
+        top: 56,
+        left: "50%",
+        transform: "translateX(-50%)",
+        width: 54,
+        height: 26,
+        borderBottom: `4px solid ${COLORS.outline}`,
+        borderRadius: "0 0 50px 50px",
+        opacity: 1 - openAmount * 0.6,
+      }}
+    />
+    {/* Open mouth, scales up while talking */}
+    <div
+      style={{
+        position: "absolute",
+        top: 58,
+        left: "50%",
+        width: 40,
+        height: 28,
+        backgroundColor: COLORS.outline,
+        borderRadius: "0 0 20px 20px",
+        transform: `translateX(-50%) scaleY(${openAmount})`,
+        transformOrigin: "top center",
+        opacity: openAmount > 0.04 ? 1 : 0,
+      }}
+    >
+      <div
+        style={{
+          position: "absolute",
+          top: 2,
+          left: "50%",
+          width: 24,
+          height: 10,
+          backgroundColor: "#D98A8A",
+          borderRadius: "50%",
+          transform: "translateX(-50%)",
+        }}
+      />
+    </div>
+  </>
 );
 
 const Claws: React.FC = () => (
@@ -114,6 +163,7 @@ export const Bear: React.FC<BearProps> = ({
   style,
   rightArmStyle,
   leftArmStyle,
+  mouthOpen = 0,
 }) => {
   return (
     <div style={{ position: "relative", width: 260, height: 330, ...style }}>
@@ -232,19 +282,7 @@ export const Bear: React.FC<BearProps> = ({
             borderRadius: "50%",
           }}
         />
-        {/* Smile */}
-        <div
-          style={{
-            position: "absolute",
-            top: 56,
-            left: "50%",
-            transform: "translateX(-50%)",
-            width: 54,
-            height: 26,
-            borderBottom: `4px solid ${COLORS.outline}`,
-            borderRadius: "0 0 50px 50px",
-          }}
-        />
+        <Mouth openAmount={mouthOpen} />
       </div>
 
       {/* Apron straps */}
@@ -283,7 +321,7 @@ export const Bear: React.FC<BearProps> = ({
           height: 170,
           backgroundColor: COLORS.apron,
           borderRadius: 12,
-          border: `4px solid ${COLORS.white}`,
+          border: `4px solid ${COLORS.apronTrim}`,
         }}
       >
         {/* Pocket */}
@@ -297,7 +335,7 @@ export const Bear: React.FC<BearProps> = ({
             height: 50,
             backgroundColor: COLORS.apronDark,
             borderRadius: 8,
-            border: `3px solid ${COLORS.white}`,
+            border: `3px solid ${COLORS.apronTrim}`,
           }}
         />
       </div>

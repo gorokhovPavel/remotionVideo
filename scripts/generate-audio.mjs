@@ -1,5 +1,8 @@
-// Procedurally synthesizes the background music and sound effects for the
-// BearCleaning video into public/audio/*.wav. Run with: npm run generate-audio
+// Procedurally synthesizes the ambient kitchen sounds and humming tune for
+// the BearKitchen video into public/audio/*.wav. Run with: npm run generate-audio
+//
+// The Russian voiceover line (public/audio/voiceover.wav) is generated
+// separately via macOS `say` — see scripts/generate-voiceover.sh.
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
@@ -38,11 +41,29 @@ function writeWav(filePath, samples) {
   console.log(`Wrote ${path.relative(process.cwd(), filePath)} (${(buffer.length / 1024).toFixed(1)} KB)`);
 }
 
-const triangleWave = (phase) => 2 * Math.abs(2 * (phase - Math.floor(phase + 0.5))) - 1;
-const sawWave = (phase) => 2 * (phase - Math.floor(phase + 0.5));
+/** Soft low-pass filtered white noise (steam / rumble texture). */
+function lowpassNoise(n, alpha) {
+  const out = new Float32Array(n);
+  let prev = 0;
+  for (let i = 0; i < n; i++) {
+    const white = Math.random() * 2 - 1;
+    prev = alpha * prev + (1 - alpha) * white;
+    out[i] = prev;
+  }
+  return out;
+}
 
-/** Adds a decaying note into an existing sample buffer (additive synthesis). */
-function addNote(samples, startTime, duration, freq, amp, wave = "triangle", decay = 4) {
+const NOTES = {
+  C4: 261.63,
+  D4: 293.66,
+  E4: 329.63,
+  G4: 392.0,
+  A4: 440.0,
+  C5: 523.25,
+};
+
+/** A warm, "hummed" note: sine + faint harmonic, vibrato, soft attack/release. */
+function addHumNote(samples, startTime, duration, freq, amp) {
   const startSample = Math.floor(startTime * SAMPLE_RATE);
   const numSamples = Math.floor(duration * SAMPLE_RATE);
 
@@ -51,164 +72,184 @@ function addNote(samples, startTime, duration, freq, amp, wave = "triangle", dec
     if (idx < 0 || idx >= samples.length) continue;
 
     const t = i / SAMPLE_RATE;
-    const env = Math.exp(-decay * t);
-    const phase = (freq * t) % 1;
-    let w;
-    if (wave === "triangle") w = triangleWave(phase);
-    else if (wave === "saw") w = sawWave(phase);
-    else w = Math.sin(2 * Math.PI * freq * t);
+    const vibrato = 1 + Math.sin(2 * Math.PI * 5 * t) * 0.01;
+    const f = freq * vibrato;
+    const attack = Math.min(t / 0.05, 1);
+    const release = Math.min((duration - t) / 0.08, 1);
+    const env = Math.max(0, Math.min(attack, release));
+    const main = Math.sin(2 * Math.PI * f * t);
+    const harmonic = Math.sin(2 * Math.PI * f * 2 * t) * 0.15;
 
-    samples[idx] += w * env * amp;
+    samples[idx] += (main + harmonic) * env * amp;
   }
 }
-
-function noiseBurst(duration, decay, amp) {
-  const n = Math.floor(duration * SAMPLE_RATE);
-  const samples = new Float32Array(n);
-  for (let i = 0; i < n; i++) {
-    const t = i / SAMPLE_RATE;
-    samples[i] = (Math.random() * 2 - 1) * Math.exp(-decay * t) * amp;
-  }
-  return samples;
-}
-
-const NOTES = {
-  C3: 130.81,
-  C4: 261.63,
-  D4: 293.66,
-  E4: 329.63,
-  G4: 392.0,
-  A4: 440.0,
-  C5: 523.25,
-  E5: 659.25,
-};
 
 // ---------------------------------------------------------------------------
-// Background music: bouncy 8-second pentatonic loop (Remotion loops it)
+// Kettle hiss: soft steam whistle, loopable
 // ---------------------------------------------------------------------------
 {
-  const BPM = 120;
-  const beat = 60 / BPM; // 0.5s
-  const eighth = beat / 2; // 0.25s
-  const bars = 4;
-  const duration = bars * 4 * beat; // 8s
-  const music = new Float32Array(Math.floor(duration * SAMPLE_RATE));
+  const duration = 2;
+  const n = Math.floor(duration * SAMPLE_RATE);
+  const hiss = lowpassNoise(n, 0.96);
 
-  // Bouncy pentatonic walk, 8 eighth-notes per bar
-  const melody = [
-    "C4", "E4", "G4", "E4", "A4", "G4", "E4", "D4",
-    "C4", "D4", "E4", "G4", "E4", "C4", "D4", "E4",
-    "G4", "E4", "C5", "A4", "G4", "E4", "D4", "C4",
-    "E4", "G4", "A4", "G4", "E4", "D4", "C4", null,
-  ];
+  for (let i = 0; i < n; i++) {
+    const t = i / SAMPLE_RATE;
+    const breath = 0.7 + 0.3 * Math.sin(2 * Math.PI * 0.6 * t);
+    const whistle =
+      Math.sin(2 * Math.PI * 1900 * t) *
+      (0.5 + 0.5 * Math.sin(2 * Math.PI * 0.6 * t)) *
+      0.05;
+    hiss[i] = hiss[i] * 0.18 * breath + whistle;
+  }
 
+  writeWav(path.join(OUT_DIR, "kettle-hiss.wav"), hiss);
+}
+
+// ---------------------------------------------------------------------------
+// Borsch bubble: gentle simmering pot, occasional "plop" bubbles, loopable
+// ---------------------------------------------------------------------------
+{
+  const duration = 2.5;
+  const n = Math.floor(duration * SAMPLE_RATE);
+  const pot = lowpassNoise(n, 0.9);
+  for (let i = 0; i < n; i++) pot[i] *= 0.05;
+
+  const bubbleTimes = [0.1, 0.5, 0.78, 1.15, 1.5, 1.85, 2.15, 2.35];
+  for (const start of bubbleTimes) {
+    const startFreq = 160 + Math.random() * 60;
+    const startSample = Math.floor(start * SAMPLE_RATE);
+    const len = Math.floor(0.09 * SAMPLE_RATE);
+    for (let i = 0; i < len; i++) {
+      const idx = startSample + i;
+      if (idx >= n) continue;
+      const t = i / SAMPLE_RATE;
+      const freq = startFreq * (1 - t / 0.09) + 60;
+      const env = Math.exp(-30 * t);
+      pot[idx] += Math.sin(2 * Math.PI * freq * t) * env * 0.35;
+    }
+  }
+
+  writeWav(path.join(OUT_DIR, "borsch-bubble.wav"), pot);
+}
+
+// ---------------------------------------------------------------------------
+// Hum: cheerful melodic "mmm" tune, loopable
+// ---------------------------------------------------------------------------
+{
+  const duration = 4;
+  const hum = new Float32Array(Math.floor(duration * SAMPLE_RATE));
+
+  const melody = ["G4", "A4", "C5", "A4", "G4", "E4", "D4", "C4"];
   melody.forEach((note, i) => {
-    if (!note) return;
-    addNote(music, i * eighth, eighth * 1.6, NOTES[note], 0.32, "triangle", 6);
+    addHumNote(hum, i * 0.5, 0.35, NOTES[note], 0.28);
   });
 
-  // Soft "boom-chick" bass on beats 1 and 3 of every bar
-  for (let bar = 0; bar < bars; bar++) {
-    addNote(music, bar * 4 * beat, beat * 0.9, NOTES.C3, 0.22, "sine", 3);
-    addNote(music, bar * 4 * beat + 2 * beat, beat * 0.9, NOTES.C3, 0.18, "sine", 3);
-  }
-
-  writeWav(path.join(OUT_DIR, "bg-music.wav"), music);
+  writeWav(path.join(OUT_DIR, "hum.wav"), hum);
 }
 
 // ---------------------------------------------------------------------------
-// Splash: noise burst + a couple of high "droplet" blips
+// Steam blast: a sharp burst of escaping steam (Gag 1 — the kettle erupts)
 // ---------------------------------------------------------------------------
 {
-  const splash = noiseBurst(0.4, 10, 0.5);
-  addNote(splash, 0.05, 0.15, 1400, 0.3, "sine", 25);
-  addNote(splash, 0.15, 0.15, 1900, 0.25, "sine", 25);
-  writeWav(path.join(OUT_DIR, "splash.wav"), splash);
-}
-
-// ---------------------------------------------------------------------------
-// Vacuum: struggling motor hum (sawtooth + noise + tremolo, fades in/out)
-// ---------------------------------------------------------------------------
-{
-  const duration = 3;
+  const duration = 1.1;
   const n = Math.floor(duration * SAMPLE_RATE);
-  const vacuum = new Float32Array(n);
+  const blast = lowpassNoise(n, 0.9);
 
   for (let i = 0; i < n; i++) {
     const t = i / SAMPLE_RATE;
-    const tremolo = 1 + 0.3 * Math.sin(2 * Math.PI * 8 * t);
-    const motor = sawWave((90 * t) % 1) * 0.25;
-    const hiss = (Math.random() * 2 - 1) * 0.12;
-    const fade = Math.min(t / 0.15, (duration - t) / 0.15, 1);
-    vacuum[i] = (motor + hiss) * tremolo * fade;
+    const env = Math.sin(Math.min(1, t / 0.08) * (Math.PI / 2)) * Math.exp(-1.6 * t);
+    const whistle = Math.sin(2 * Math.PI * (2400 - t * 600) * t) * 0.18 * env;
+    blast[i] = blast[i] * 0.6 * env + whistle;
   }
 
-  writeWav(path.join(OUT_DIR, "vacuum.wav"), vacuum);
+  writeWav(path.join(OUT_DIR, "steam-blast.wav"), blast);
 }
 
 // ---------------------------------------------------------------------------
-// Crash: bright noise burst + descending low-end thud (door impact)
+// Pot overflow: a bubbling crescendo into a wet splat (Gag 2 — the borsch
+// erupts and lands on the bear's head)
 // ---------------------------------------------------------------------------
 {
-  const crash = noiseBurst(0.35, 9, 0.55);
-  for (let i = 0; i < crash.length; i++) {
-    const t = i / SAMPLE_RATE;
-    const freq = 220 - 160 * Math.min(t / 0.2, 1);
-    crash[i] += Math.sin(2 * Math.PI * freq * t) * Math.exp(-8 * t) * 0.5;
-  }
-  writeWav(path.join(OUT_DIR, "crash.wav"), crash);
-}
-
-// ---------------------------------------------------------------------------
-// Ta-da: rising arpeggio ending on a held chord (final reveal)
-// ---------------------------------------------------------------------------
-{
-  const duration = 1.2;
-  const tada = new Float32Array(Math.floor(duration * SAMPLE_RATE));
-
-  addNote(tada, 0, 0.18, NOTES.C4, 0.4, "triangle", 3);
-  addNote(tada, 0.15, 0.18, NOTES.E4, 0.4, "triangle", 3);
-  addNote(tada, 0.3, 0.18, NOTES.G4, 0.4, "triangle", 3);
-  addNote(tada, 0.45, 0.7, NOTES.C5, 0.4, "triangle", 2.5);
-  addNote(tada, 0.45, 0.7, NOTES.E5, 0.25, "triangle", 2.5);
-
-  writeWav(path.join(OUT_DIR, "tada.wav"), tada);
-}
-
-// ---------------------------------------------------------------------------
-// Machine rumble: a washing machine bouncing across the floor (loopable)
-// ---------------------------------------------------------------------------
-{
-  const duration = 2; // 8 thumps at 0.25s each, loops cleanly
+  const duration = 1.3;
   const n = Math.floor(duration * SAMPLE_RATE);
-  const rumble = new Float32Array(n);
+  const overflow = lowpassNoise(n, 0.88);
+  for (let i = 0; i < n; i++) overflow[i] *= 0.05;
 
+  // Rapid-fire bubbles, building in intensity
+  for (let b = 0; b < 14; b++) {
+    const start = (b / 14) * 0.7;
+    const startFreq = 140 + Math.random() * 80;
+    const startSample = Math.floor(start * SAMPLE_RATE);
+    const len = Math.floor(0.07 * SAMPLE_RATE);
+    const intensity = 0.2 + (b / 14) * 0.6;
+    for (let i = 0; i < len; i++) {
+      const idx = startSample + i;
+      if (idx >= n) continue;
+      const t = i / SAMPLE_RATE;
+      const freq = startFreq * (1 - t / 0.07) + 50;
+      const env = Math.exp(-25 * t);
+      overflow[idx] += Math.sin(2 * Math.PI * freq * t) * env * intensity;
+    }
+  }
+
+  // The final splat
+  const splatStart = Math.floor(0.75 * SAMPLE_RATE);
+  const splatLen = Math.floor(0.35 * SAMPLE_RATE);
+  for (let i = 0; i < splatLen; i++) {
+    const idx = splatStart + i;
+    if (idx >= n) continue;
+    const t = i / SAMPLE_RATE;
+    const env = Math.exp(-9 * t);
+    overflow[idx] += (Math.random() * 2 - 1) * env * 0.7;
+  }
+
+  writeWav(path.join(OUT_DIR, "pot-overflow.wav"), overflow);
+}
+
+// ---------------------------------------------------------------------------
+// Jar crash: a clatter of jars and cans tumbling onto the bear (Gag 3)
+// ---------------------------------------------------------------------------
+{
+  const duration = 1.3;
+  const n = Math.floor(duration * SAMPLE_RATE);
+  const crash = new Float32Array(n);
+
+  // Dull thuds for cans landing
+  const thuds = [0.05, 0.18, 0.32, 0.5, 0.68, 0.9];
+  for (const start of thuds) {
+    const startSample = Math.floor(start * SAMPLE_RATE);
+    const len = Math.floor(0.12 * SAMPLE_RATE);
+    const freq = 90 + Math.random() * 40;
+    for (let i = 0; i < len; i++) {
+      const idx = startSample + i;
+      if (idx >= n) continue;
+      const t = i / SAMPLE_RATE;
+      const env = Math.exp(-22 * t);
+      crash[idx] += Math.sin(2 * Math.PI * freq * t) * env * 0.5;
+    }
+  }
+
+  // Bright glassy clinks for jars
+  const clinks = [0.08, 0.22, 0.4, 0.58, 0.8, 1.0];
+  for (const start of clinks) {
+    const startSample = Math.floor(start * SAMPLE_RATE);
+    const len = Math.floor(0.18 * SAMPLE_RATE);
+    const freq = 1800 + Math.random() * 1400;
+    for (let i = 0; i < len; i++) {
+      const idx = startSample + i;
+      if (idx >= n) continue;
+      const t = i / SAMPLE_RATE;
+      const env = Math.exp(-18 * t);
+      crash[idx] += Math.sin(2 * Math.PI * freq * t) * env * 0.25;
+    }
+  }
+
+  // A wash of noise to tie it all together
+  const noise = lowpassNoise(n, 0.85);
   for (let i = 0; i < n; i++) {
     const t = i / SAMPLE_RATE;
-    const thumpPhase = t % 0.25;
-    const thumpEnv = Math.exp(-32 * thumpPhase);
-    const thud = Math.sin(2 * Math.PI * 55 * t) * thumpEnv * 0.6;
-    const rattle = (Math.random() * 2 - 1) * thumpEnv * 0.25;
-    rumble[i] = thud + rattle;
+    crash[i] += noise[i] * 0.15 * Math.exp(-2.5 * t);
   }
 
-  writeWav(path.join(OUT_DIR, "machine-rumble.wav"), rumble);
-}
-
-// ---------------------------------------------------------------------------
-// Alarm: shrill smoke-detector beeping (loopable)
-// ---------------------------------------------------------------------------
-{
-  const duration = 1; // two beeps, loops cleanly
-  const n = Math.floor(duration * SAMPLE_RATE);
-  const alarm = new Float32Array(n);
-
-  for (let i = 0; i < n; i++) {
-    const t = i / SAMPLE_RATE;
-    const beepOn = (t % 0.5) < 0.22;
-    const square = Math.sign(Math.sin(2 * Math.PI * 1300 * t));
-    alarm[i] = beepOn ? square * 0.28 : 0;
-  }
-
-  writeWav(path.join(OUT_DIR, "alarm.wav"), alarm);
+  writeWav(path.join(OUT_DIR, "jar-crash.wav"), crash);
 }
