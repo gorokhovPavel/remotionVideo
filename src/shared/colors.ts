@@ -1,0 +1,18 @@
+export const COLORS = {
+  background: "#FFF6E5",
+  wall: "#BFE9E0",
+  wallDark: "#9ED6C9",
+  floor: "#E8D9C4",
+  bearFur: "#8B5E3C",
+  bearFurDark: "#A9714B",
+  bearBelly: "#E3C9A8",
+  apron: "#F4C95D",
+  apronDark: "#E0B445",
+  white: "#FFFFFF",
+  outline: "#3A2A1E",
+  accentRed: "#FF6B6B",
+  accentStrongRed: "#E63946",
+  cabinet: "#D8B384",
+  metal: "#9AA5B1",
+  metalDark: "#6E7A87",
+} as const;
